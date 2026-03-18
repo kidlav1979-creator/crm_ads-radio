@@ -1,0 +1,84 @@
+<div class="card">
+    <div class="card-header">
+        <h2 style="margin:0"><i class="fas fa-shield-alt"></i> Контроль «Дыр» в эфире</h2>
+    </div>
+    <div class="card-body">
+        <div class="control-panel" style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+            <span>Проверка месяца:</span>
+            <input type="month" id="controlMonth" class="form-control" style="width: 200px;">
+            <button class="btn-primary" onclick="window.checkHoles()">Сканировать эфир</button>
+        </div>
+
+        <div id="calendarHoles" class="holes-grid"></div>
+    </div>
+</div>
+
+<style>
+    .holes-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); 
+        gap: 15px; 
+        margin-top: 20px; 
+    }
+    .hole-card {
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid #ddd;
+        transition: 0.3s;
+    }
+    .hole-card.status-ok { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+    .hole-card.status-fail { background: #f8d7da; border-color: #f5c6cb; color: #721c24; box-shadow: 0 0 10px rgba(220,53,69,0.2); }
+    .hole-date { font-weight: bold; font-size: 1.1rem; display: block; }
+    .hole-status-text { font-size: 0.75rem; text-transform: uppercase; margin-top: 5px; display: block; }
+</style>
+
+<script>
+(function() {
+    // Установка текущего месяца
+    const monthInput = document.getElementById('controlMonth');
+    if (monthInput) monthInput.value = new Date().toISOString().slice(0, 7);
+
+    window.checkHoles = async function() {
+        const month = document.getElementById('controlMonth').value;
+        const container = document.getElementById('calendarHoles');
+        container.innerHTML = 'Сканируем базу данных...';
+
+        try {
+            // Получаем список дат, которые уже есть в архиве
+            const res = await fetch(`api/get_archive_dates.php?month=${month}`);
+            const data = await res.json(); // Придет массив ['2026-03-01', '2026-03-02']
+            
+            const [year, m] = month.split('-').map(Number);
+            const daysInMonth = new Date(year, m, 0).getDate();
+            
+            container.innerHTML = '';
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${month}-${String(d).padStart(2, '0')}`;
+                const isSaved = data.includes(dateStr);
+                
+                const card = document.createElement('div');
+                card.className = `hole-card ${isSaved ? 'status-ok' : 'status-fail'}`;
+                card.innerHTML = `
+                    <span class="hole-date">${d}</span>
+                    <span class="hole-status-text">${isSaved ? 'Готов' : 'ДЫРА'}</span>
+                    ${isSaved ? '<i class="fas fa-check-circle"></i>' : '<i class="fas fa-exclamation-triangle"></i>'}
+                `;
+                
+                // Если дыра - при клике ведем в шахматку (условно)
+                if (!isSaved) {
+                    card.style.cursor = 'pointer';
+                    card.title = 'Нажмите, чтобы сформировать';
+                }
+
+                container.appendChild(card);
+            }
+        } catch (e) {
+            container.innerHTML = 'Ошибка при сканировании.';
+        }
+    };
+
+    window.checkHoles();
+})();
+</script>

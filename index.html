@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio CRM | Kostanay Edition</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Базовые стили для оболочки */
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f4f7f6; }
+        .main-nav { background: #2c3e50; color: white; display: flex; padding: 0 20px; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .nav-brand { font-weight: bold; font-size: 1.2rem; margin-right: 40px; color: #ecf0f1; }
+        .nav-links { display: flex; gap: 5px; }
+        .nav-btn { background: none; border: none; color: #bdc3c7; padding: 15px 20px; cursor: pointer; transition: 0.3s; font-size: 0.9rem; border-bottom: 3px solid transparent; }
+        .nav-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+        .nav-btn.active { color: white; border-bottom-color: #e74c3c; background: rgba(255,255,255,0.05); }
+        .module-container { flex: 1; padding: 25px; overflow-y: auto; }
+        .loader { text-align: center; margin-top: 50px; color: #7f8c8d; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+<nav class="main-nav">
+    <div class="nav-brand"><i class="fas fa-broadcast-tower"></i> RADIO CRM</div>
+    <div class="nav-links">
+	<button class="nav-btn" id="btn-export" onclick="loadModule('export')"><i class="fas fa-file-export"></i>Экспорт</button>
+        <button class="nav-btn" id="btn-matrix" onclick="loadModule('matrix')"><i class="fas fa-table"></i> Шахматка</button>
+        <button class="nav-btn" id="btn-scheduler" onclick="loadModule('scheduler')"><i class="fas fa-calendar-plus"></i> Планирование</button>
+        <button class="nav-btn" id="btn-database" onclick="loadModule('database')"><i class="fas fa-database"></i> База роликов</button>
+		    </div>
+</nav>
+
+<div id="module-container" class="module-container">
+    <div class="loader">Выберите раздел в меню выше</div>
+</div>
+
+<script>
+async function loadModule(name) {
+    const container = document.getElementById('module-container');
+    container.innerHTML = '<div class="loader">Загрузка...</div>';
+
+    try {
+        const response = await fetch(`modules/${name}.html`);
+        const rawHtml = await response.text();
+        
+        // Разделяем HTML и Скрипты через регулярное выражение
+        const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
+        let scriptsContent = "";
+        let match;
+        
+        // Собираем весь JS код
+        while ((match = scriptRegex.exec(rawHtml)) !== null) {
+            scriptsContent += match[1];
+        }
+
+        // Удаляем скрипты из HTML, чтобы они не вывелись как текст
+        const cleanHtml = rawHtml.replace(scriptRegex, "");
+
+        // 1. Очищаем старые скрипты
+        document.querySelectorAll('script[data-module-script="true"]').forEach(s => s.remove());
+
+        // 2. Вставляем чистую верстку
+        container.innerHTML = cleanHtml;
+
+        // 3. Выполняем скрипты
+        if (scriptsContent.trim()) {
+            const scriptElement = document.createElement('script');
+            scriptElement.setAttribute('data-module-script', 'true');
+            scriptElement.textContent = scriptsContent;
+            document.body.appendChild(scriptElement);
+        }
+
+    } catch (e) {
+        container.innerHTML = `<div class="error">Ошибка: ${e.message}</div>`;
+    }
+}
+
+// Загружаем шахматку при старте
+window.onload = () => loadModule('matrix');
+</script>
+
+</body>
+</html>
