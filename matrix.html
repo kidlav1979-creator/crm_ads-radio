@@ -1,0 +1,271 @@
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin:0"><i class="fas fa-th"></i> Шахматка выходов</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <span>Месяц:</span>
+            <input type="month" id="matrixMonth" class="form-control" onchange="window.reloadMatrix()">
+        </div>
+    </div>
+    <div id="matrixTablesArea"></div>
+</div>
+
+<div class="day-selector-card card" style="margin-top: 20px;">
+    <div class="card-header">Выберите день для формирования плейлиста</div>
+    <div id="dayButtons" class="day-buttons-container"></div>
+</div>
+
+<div id="daySliceSection" class="day-slice-wrapper" style="display:none;">
+    <div class="slice-header">
+        <h3><i class="fas fa-layer-group"></i> Срез на <span id="selectedDateLabel" style="color:#3498db"></span></h3>
+        <button class="btn-submit" onclick="window.saveAndExportPlaylist()">
+            <i class="fas fa-file-export"></i> Сохранить и Экспорт
+        </button>
+    </div>
+    <div class="blocks-grid" id="dropZonesGrid"></div>
+</div>
+
+<script>
+(function() {
+    const LANGUAGES = ['русский', 'казахский'];
+    const BLOCKS = [1, 2]; 
+
+    const grid = document.getElementById('dropZonesGrid');
+    BLOCKS.forEach(b => {
+        LANGUAGES.forEach(l => {
+            grid.innerHTML += `
+                <div class="block-column">
+                    <div class="block-title">${b} Блок ${l}</div>
+                    <div class="drop-container" id="zone_${b}_${l}" data-block="${b}" data-lang="${l}" ondrop="drop(event)" ondragover="allowDrop(event)">
+                        <div class="lang-label" style="pointer-events:none;">Ролики <span class="time-sum" id="sum_${b}_${l}">00:00</span></div>
+                    </div>
+                </div>`;
+        });
+    });
+
+    window.initMatrix = function() {
+        const input = document.getElementById('matrixMonth');
+        if (!input) return;
+        if (!input.value) input.value = new Date().toISOString().slice(0, 7);
+        window.reloadMatrix();
+    };
+
+    window.reloadMatrix = function() {
+        window.loadMatrixData();
+        window.renderDayButtons();
+        document.getElementById('daySliceSection').style.display = 'none';
+    };
+
+    window.loadMatrixData = async function() {
+        const month = document.getElementById('matrixMonth').value;
+        const res = await fetch(`api/get_matrix.php?month=${month}`);
+        const data = await res.json();
+        if (data.status === 'success') renderMainTables(data.tracks);
+    };
+
+    function renderMainTables(tracks) {
+        const area = document.getElementById('matrixTablesArea');
+        area.innerHTML = '';
+
+        BLOCKS.forEach(b => {
+            LANGUAGES.forEach(l => {
+                const filtered = tracks.filter(t => t.block_num == b && t.language.toLowerCase().trim() == l);
+                if (filtered.length === 0) return;
+
+                let html = `<div class="block-group-wrapper">
+                    <div class="matrix-block-header">${b} Блок ${l.toUpperCase()}</div>
+                    <div class="matrix-scroll-wrapper">
+                        <table class="matrix-table">
+                            <thead><tr><th class="sticky-col">Ролик / Название</th>`;
+                for (let d = 1; d <= 31; d++) html += `<th>${d}</th>`;
+                html += `<th><i class="fas fa-trash"></i></th></tr></thead><tbody>`;
+
+                filtered.forEach(t => {
+                    html += `<tr>
+                        <td class="sticky-col">
+                            <div class="track-info-cell">
+                                <b class="track-code">${t.track_code}</b>
+                                <span class="track-name-hint">${t.track_name || ''}</span>
+                            </div>
+                        </td>`;
+                    for (let d = 0; d < 31; d++) {
+                        const active = t.days_mask[d] === '1';
+                        // Удален onclick - теперь ячейки только для чтения
+                        html += `<td class="day-cell readonly ${active ? 'active' : ''}"></td>`;
+                    }
+                    html += `<td><button class="btn-delete-small" onclick="window.deleteScheduleRow(${t.schedule_id}, '${t.track_code}')">×</button></td></tr>`;
+                });
+                area.innerHTML += html + '</tbody></table></div></div>';
+            });
+        });
+    }
+
+    window.renderDayButtons = function() {
+        const [year, m] = document.getElementById('matrixMonth').value.split('-').map(Number);
+        const days = new Date(year, m, 0).getDate();
+        const container = document.getElementById('dayButtons');
+        container.innerHTML = '';
+        for (let d = 1; d <= days; d++) {
+            const btn = document.createElement('button');
+            btn.className = 'day-btn'; 
+            btn.id = 'btn_day_' + d;
+            btn.innerText = d;
+            btn.onclick = () => {
+                // Подсветка активной кнопки
+                document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active-day'));
+                btn.classList.add('active-day');
+                window.loadDaySlice(d);
+            };
+            container.appendChild(btn);
+        }
+    };
+
+    window.loadDaySlice = async function(day) {
+        const month = document.getElementById('matrixMonth').value;
+        document.getElementById('selectedDateLabel').innerText = `${day} ${month}`;
+        document.getElementById('daySliceSection').style.display = 'block';
+
+        const res = await fetch(`api/get_day_schedule.php?month=${month}&day=${day}`);
+        const data = await res.json();
+        
+        document.querySelectorAll('.drop-container').forEach(z => {
+            const label = z.querySelector('.lang-label');
+            z.innerHTML = ''; z.appendChild(label);
+            z.querySelector('.time-sum').innerText = '00:00';
+        });
+
+        Object.keys(data).forEach(key => {
+            const container = document.getElementById(`zone_${key}`);
+            if (container) {
+                document.getElementById(`sum_${key}`).innerText = data[key].total_formatted;
+                data[key].items.forEach((item, idx) => {
+                    const el = document.createElement('div');
+                    el.className = 'draggable-track';
+                    el.id = `drag_${key}_${Date.now()}_${idx}`;
+                    el.draggable = true;
+                    el.ondragstart = (ev) => ev.dataTransfer.setData("text", ev.target.id);
+                    
+                    el.dataset.code = item.code;
+                    el.dataset.duration = item.duration;
+                    el.dataset.title = item.track_name;
+                    el.dataset.lang = item.language || (key.includes('русский') ? 'русский' : 'казахский');
+
+                    el.innerHTML = `<div class="track-card-content"><span class="t-code">${item.code}</span><span class="t-name">${item.track_name}</span></div>`;
+                    container.appendChild(el);
+                });
+            }
+        });
+    };
+
+    window.saveAndExportPlaylist = async function() {
+        const dateParts = document.getElementById('matrixMonth').value.split('-');
+        const dayStr = document.getElementById('selectedDateLabel').innerText.split(' ')[0].padStart(2, '0');
+        const payload = { date: `${dateParts[0]}-${dateParts[1]}-${dayStr}`, groups: {} };
+        
+        document.querySelectorAll('.drop-container').forEach(zone => {
+            const key = zone.id.replace('zone_', '');
+            const items = [];
+            zone.querySelectorAll('.draggable-track').forEach(el => {
+                items.push({ code: el.dataset.code, track_name: el.dataset.title, duration: el.dataset.duration });
+            });
+            if (items.length) payload.groups[key] = { items };
+        });
+
+        const res = await fetch('api/save_day_to_archive.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert('Плейлист сохранен!');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([result.content], { type: 'text/plain' }));
+            a.download = result.filename; a.click();
+        }
+    };
+
+    window.deleteScheduleRow = async function(id, code) {
+        if (!confirm(`Удалить весь график для ролика ${code}?`)) return;
+        await fetch('api/delete_schedule_row.php', { method: 'POST', body: JSON.stringify({ schedule_id: id }) });
+        window.loadMatrixData();
+    };
+
+    window.initMatrix();
+})();
+
+// Свободный Drag & Drop
+function allowDrop(ev) { ev.preventDefault(); }
+function drop(ev) {
+    ev.preventDefault();
+    const data = ev.dataTransfer.getData("text");
+    const el = document.getElementById(data);
+    
+    let target = ev.target;
+    // Ищем контейнер
+    while (target && !target.classList.contains('drop-container')) {
+        // Если попали на другую карточку, запоминаем её как ориентир для вставки
+        if (target.classList.contains('draggable-track')) break;
+        target = target.parentElement;
+    }
+    
+    const container = target.classList.contains('drop-container') ? target : target.closest('.drop-container');
+    
+    if (container) {
+        if (el.dataset.lang !== container.dataset.lang) {
+            alert('Нельзя перемещать ролик в блок с другим языком!');
+            return;
+        }
+        
+        // Логика вставки перед элементом или в конец
+        if (target.classList.contains('draggable-track') && target !== el) {
+            container.insertBefore(el, target);
+        } else {
+            container.appendChild(el);
+        }
+        window.recalcBlockTimes();
+    }
+}
+
+window.recalcBlockTimes = function() {
+    document.querySelectorAll('.drop-container').forEach(zone => {
+        let total = 0;
+        zone.querySelectorAll('.draggable-track').forEach(t => {
+            const dur = t.dataset.duration || "00:00:00";
+            const [h, m, s] = dur.split(':').map(Number);
+            total += h * 3600 + m * 60 + s;
+        });
+        zone.querySelector('.time-sum').innerText = `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+    });
+};
+</script>
+
+<style>
+    .block-group-wrapper { margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+    .matrix-block-header { background: #2c3e50; color: #fff; padding: 6px 12px; font-size: 13px; font-weight: bold; }
+    .matrix-scroll-wrapper { overflow-x: auto; background: #fff; }
+    .matrix-table { table-layout: fixed; width: 100%; border-collapse: collapse; font-size: 11px; }
+    .matrix-table th, .matrix-table td { border: 1px solid #eee; padding: 4px; text-align: center; }
+    .sticky-col { position: sticky; left: 0; background: #fdfdfd; z-index: 5; border-right: 2px solid #ddd !important; width: 180px; min-width: 180px; text-align: left; }
+    .track-info-cell { display: flex; flex-direction: column; line-height: 1.2; }
+    .track-name-hint { font-size: 9px; color: #7f8c8d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+    
+    .day-cell { height: 22px; width: 22px; }
+    .day-cell.active { background: #3498db; }
+    .day-cell.readonly { cursor: default; }
+
+    .day-buttons-container { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px; background: #f8f9fa; }
+    .day-btn { padding: 5px 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; border-radius: 3px; font-size: 12px; transition: 0.2s; }
+    .day-btn:hover { background: #ebf5fb; }
+    .day-btn.active-day { background: #3498db !important; color: #fff; border-color: #2980b9; font-weight: bold; transform: scale(1.1); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
+    .blocks-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 15px; align-items: start; }
+    .block-column { background: #f4f6f7; border-radius: 6px; padding: 10px; border: 1px solid #d1d8dd; min-width: 0; }
+    .block-title { font-size: 12px; font-weight: bold; margin-bottom: 8px; color: #34495e; text-align: center; }
+    .drop-container { min-height: 150px; background: #fff; border: 1px dashed #cbd5e0; padding: 8px; border-radius: 4px; }
+    .lang-label { font-size: 10px; color: #95a5a6; display: flex; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #eee; }
+    .time-sum { color: #27ae60; font-weight: bold; }
+    
+    .draggable-track { padding: 8px; background: #fff; border: 1px solid #e2e8f0; margin-bottom: 6px; cursor: move; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+    .track-card-content { display: flex; flex-direction: column; pointer-events: none; }
+    .t-code { font-weight: bold; font-size: 11px; color: #2c3e50; }
+    .t-name { font-size: 10px; color: #636e72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+
+    .btn-submit { background: #27ae60; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .btn-delete-small { border: none; background: none; color: #e74c3c; cursor: pointer; font-size: 16px; }
+</style>

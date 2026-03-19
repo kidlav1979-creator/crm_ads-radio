@@ -1,0 +1,315 @@
+<script src="html2pdf.bundle.min.js" onload="console.log('PDF Lib Loaded')" onerror="console.error('PDF Lib Failed')"></script>
+
+<script>
+    // Если через 2 секунды библиотека не появилась, попробуем загрузить её динамически
+    setTimeout(() => {
+        if (typeof html2pdf === 'undefined') {
+            console.warn('Библиотека не найдена в корне, пробуем альтернативный путь...');
+            var script = document.createElement('script');
+            script.src = './html2pdf.bundle.min.js'; // точка перед слешем указывает на текущую директорию
+            document.head.appendChild(script);
+        }
+    }, 2000);
+</script>
+<script src="/crm/html2pdf.bundle.min.js"></script>
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <h2 style="margin:0"><i class="fas fa-shield-alt"></i> Контроль «Дыр» в эфире</h2>
+    </div>
+    <div class="card-body">
+        <div class="control-panel" style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+            <span>Проверка месяца:</span>
+            <input type="month" id="controlMonth" class="form-control" style="width: 200px;">
+            <button class="btn-primary" onclick="window.checkHoles()">Сканировать эфир</button>
+        </div>
+        <div id="calendarHoles" class="holes-grid"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin:0"><i class="fas fa-edit"></i> Реклама в проектах (Шахматка)</h2>
+        <div>
+            <span>Дата эфира: </span>
+            <input type="date" id="analysisDate" class="form-control" style="display: inline-block; width: auto;">
+        </div>
+    </div>
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="manual-table" id="projectsTable">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 150px;">Название проекта</th>
+                    <th colspan="2">Спонсор 1 (сек)</th>
+                    <th colspan="2">Спонсор 2 (сек)</th>
+                    <th colspan="2">Спонсор 3 (сек)</th>
+                    <th rowspan="2">Часы выхода</th>
+                    <th rowspan="2" style="width: 50px;">Удалить</th>
+                </tr>
+                <tr>
+                    <th>KZ</th><th>RU</th>
+                    <th>KZ</th><th>RU</th>
+                    <th>KZ</th><th>RU</th>
+                </tr>
+            </thead>
+            <tbody id="projectsBody"></tbody>
+        </table>
+        
+        <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+            <button class="btn-secondary" onclick="window.addProjectRow()"><i class="fas fa-plus"></i> Добавить проект</button>
+            <button class="btn-primary" style="padding: 10px 25px; font-size: 1.1rem;" onclick="window.runAnalysis()">
+                <i class="fas fa-chart-pie"></i> Выполнить Анализ
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="analysisResultCard" style="display: none; margin-top: 20px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin:0"><i class="fas fa-table"></i> Сводная сетка вещания</h2>
+        <button class="btn-success" onclick="window.exportToPDF()" id="pdfBtn" style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">
+            <i class="fas fa-file-pdf"></i> Скачать PDF
+        </button>
+    </div>
+    <div class="card-body" id="pdfContent">
+        <div id="pdfHeader" style="display: none; text-align: center; border-bottom: 2px solid #333; margin-bottom: 20px; padding-bottom: 10px;">
+            <h1 style="margin: 0;">Отчет по эфиру</h1>
+            <p id="pdfDateLabel" style="font-size: 1.2rem; color: #666;"></p>
+        </div>
+        <table class="analytics-table">
+            <thead>
+                <tr>
+                    <th>Час</th>
+                    <th>Блоки (БД)</th>
+                    <th style="width: 250px;">Проекты (Ручные)</th>
+                    <th>Всего</th>
+                    <th>Лимит</th>
+                    <th>Баланс (6ч)</th>
+                </tr>
+            </thead>
+            <tbody id="analysisBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .holes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+    .hole-card { padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #ddd; font-size: 0.8rem; }
+    .status-ok { background: #d4edda; color: #155724; }
+    .status-fail { background: #f8d7da; color: #721c24; }
+
+    .manual-table, .analytics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .manual-table th, .manual-table td, .analytics-table th, .analytics-table td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    .manual-table th { background: #f8f9fa; }
+    
+    .p-name { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; }
+    .sec-input { width: 45px; text-align: center; border: 1px solid #eee; padding: 3px; }
+    
+    .hour-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 2px; padding: 2px; }
+    .hour-item { font-size: 0.7rem; display: flex; align-items: center; gap: 1px; cursor: pointer; }
+    
+    .limit-danger { color: #dc3545 !important; font-weight: bold; background: #fff0f0 !important; }
+    .balance-good { background: #d4edda !important; color: #155724 !important; }
+    .balance-warn { background: #fff3cd !important; color: #856404 !important; }
+    .summary-cell { border-left: 2px solid #999 !important; }
+
+    .btn-delete { background: #ff4d4d; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+</style>
+
+<script>
+(function() {
+    const workHours = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+
+    function formatTime(totalSec) {
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m}м ${s}с`;
+    }
+
+    // УЛУЧШЕННАЯ ФУНКЦИЯ ЭКСПОРТА
+window.exportToPDF = function() {
+    // Проверка всех возможных мест, где может прятаться библиотека
+    const pdfLib = window.html2pdf || (window.default && window.default.html2pdf);
+
+    if (!pdfLib) {
+        alert('Критическая ошибка: Файл библиотеки загружен на сервер, но браузер блокирует его выполнение. \n\nПопробуйте:\n1. Нажать Ctrl + F5\n2. Проверить, что файл лежит именно в папке /crm/');
+        return;
+    }
+
+    const element = document.getElementById('pdfContent');
+    const date = document.getElementById('analysisDate').value;
+    const header = document.getElementById('pdfHeader');
+    const btn = document.getElementById('pdfBtn');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Формирование...';
+    header.style.display = 'block';
+    document.getElementById('pdfDateLabel').innerText = `Сводная сетка за: ${date}`;
+
+    const opt = {
+        margin:       [10, 5, 10, 5],
+        filename:     `Radio_Report_${date}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    };
+
+    // Используем найденную переменную pdfLib вместо прямого вызова html2pdf()
+    pdfLib().set(opt).from(element).save().then(() => {
+        header.style.display = 'none';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-file-pdf"></i> Скачать PDF';
+    }).catch(err => {
+        console.error('PDF Error:', err);
+        btn.disabled = false;
+        btn.innerHTML = 'Ошибка (см. консоль)';
+    });
+};
+
+    // Остальные функции (сохранение, анализ, дыры)
+    window.saveProjectsToLocal = function() {
+        const data = [];
+        document.querySelectorAll('#projectsBody tr').forEach(row => {
+            const hours = [];
+            row.querySelectorAll('.h-check:checked').forEach(cb => hours.push(parseInt(cb.value)));
+            data.push({
+                name: row.querySelector('.p-name').value,
+                s1k: row.querySelector('.p-s1k').value, s1r: row.querySelector('.p-s1r').value,
+                s2k: row.querySelector('.p-s2k').value, s2r: row.querySelector('.p-s2r').value,
+                s3k: row.querySelector('.p-s3k').value, s3r: row.querySelector('.p-s3r').value,
+                hours: hours
+            });
+        });
+        localStorage.setItem('radio_projects_v3', JSON.stringify(data));
+    };
+
+    window.deleteProjectRow = function(btn) {
+        if(confirm('Удалить проект?')) {
+            btn.closest('tr').remove();
+            window.saveProjectsToLocal();
+            if(document.getElementById('analysisResultCard').style.display !== 'none') window.runAnalysis();
+        }
+    };
+
+    window.addProjectRow = function(savedData = null) {
+        const tr = document.createElement('tr');
+        let hoursHtml = '<div class="hour-grid">';
+        workHours.forEach(h => {
+            const checked = (savedData && savedData.hours.includes(h)) ? 'checked' : '';
+            hoursHtml += `<label class="hour-item"><input type="checkbox" class="h-check" value="${h}" ${checked}>${h}</label>`;
+        });
+        hoursHtml += '</div>';
+
+        tr.innerHTML = `
+            <td><input type="text" class="p-name" placeholder="..." value="${savedData ? savedData.name : ''}"></td>
+            <td><input type="number" class="sec-input p-s1k" value="${savedData ? savedData.s1k : ''}"></td>
+            <td><input type="number" class="sec-input p-s1r" value="${savedData ? savedData.s1r : ''}"></td>
+            <td><input type="number" class="sec-input p-s2k" value="${savedData ? savedData.s2k : ''}"></td>
+            <td><input type="number" class="sec-input p-s2r" value="${savedData ? savedData.s2r : ''}"></td>
+            <td><input type="number" class="sec-input p-s3k" value="${savedData ? savedData.s3k : ''}"></td>
+            <td><input type="number" class="sec-input p-s3r" value="${savedData ? savedData.s3r : ''}"></td>
+            <td>${hoursHtml}</td>
+            <td><button class="btn-delete" onclick="window.deleteProjectRow(this)"><i class="fas fa-trash"></i></button></td>
+        `;
+        document.getElementById('projectsBody').appendChild(tr);
+    };
+
+    document.getElementById('projectsBody').addEventListener('input', window.saveProjectsToLocal);
+
+    const saved = JSON.parse(localStorage.getItem('radio_projects_v3') || '[]');
+    if(saved.length > 0) saved.forEach(item => addProjectRow(item));
+    else addProjectRow();
+
+    window.runAnalysis = async function() {
+        const date = document.getElementById('analysisDate').value;
+        if(!date) return alert('Выберите дату');
+        const resultBody = document.getElementById('analysisBody');
+        document.getElementById('analysisResultCard').style.display = 'block';
+        resultBody.innerHTML = '<tr><td colspan="6">Загрузка...</td></tr>';
+
+        let manualByHour = {};
+        workHours.forEach(h => manualByHour[h] = { kz: 0, ru: 0, projects: [] });
+
+        document.querySelectorAll('#projectsBody tr').forEach(row => {
+            const name = row.querySelector('.p-name').value.trim() || "Проект";
+            const s1k = parseInt(row.querySelector('.p-s1k').value)||0;
+            const s1r = parseInt(row.querySelector('.p-s1r').value)||0;
+            const s2k = parseInt(row.querySelector('.p-s2k').value)||0;
+            const s2r = parseInt(row.querySelector('.p-s2r').value)||0;
+            const s3k = parseInt(row.querySelector('.p-s3k').value)||0;
+            const s3r = parseInt(row.querySelector('.p-s3r').value)||0;
+            const tk = s1k+s2k+s3k; const tr = s1r+s2r+s3r;
+
+            if (tk + tr > 0) {
+                row.querySelectorAll('.h-check:checked').forEach(cb => {
+                    const h = parseInt(cb.value);
+                    if(manualByHour[h]) {
+                        manualByHour[h].kz += tk; manualByHour[h].ru += tr;
+                        manualByHour[h].projects.push(name);
+                    }
+                });
+            }
+        });
+
+        let dbBlocks = {};
+        try {
+            const res = await fetch(`api/get_archive_blocks.php?date=${date}`);
+            dbBlocks = await res.json();
+        } catch(e) {}
+
+        let html = '';
+        for(let h=6; h<24; h++) {
+            const db = dbBlocks[h] || { duration_sec: 0, kz_sec: 0, ru_sec: 0, spots_count: 0 };
+            const man = manualByHour[h] || { kz: 0, ru: 0, projects: [] };
+            const totalSec = db.duration_sec + man.kz + man.ru;
+            const limitClass = totalSec > 720 ? 'limit-danger' : '';
+
+            html += `<tr>
+                <td><b>${String(h).padStart(2, '0')}:00</b></td>
+                <td>${db.spots_count} рол. (${db.duration_sec}с)</td>
+                <td><small>${[...new Set(man.projects)].join(', ')}</small><br><b>${man.kz+man.ru}с</b></td>
+                <td class="${limitClass}"><b>${formatTime(totalSec)}</b></td>
+                <td>${totalSec > 720 ? '🛑' : '✅'}</td>`;
+
+            if(h === 6 || h === 12 || h === 18) {
+                let sKz = 0, sRu = 0;
+                for(let i=0; i<6; i++) {
+                    const c = h + i;
+                    const d = dbBlocks[c] || { kz_sec: 0, ru_sec: 0 };
+                    const m = manualByHour[c] || { kz: 0, ru: 0 };
+                    sKz += (d.kz_sec + m.kz); sRu += (d.ru_sec + m.ru);
+                }
+                const st = sKz + sRu;
+                const p = st > 0 ? Math.round((sKz / st) * 100) : 0;
+                html += `<td rowspan="6" class="summary-cell ${p >= 50 ? 'balance-good' : 'balance-warn'}">
+                            <b>${p}% KZ</b><br><small>⚖️ 6ч</small>
+                         </td>`;
+            }
+            html += `</tr>`;
+        }
+        resultBody.innerHTML = html;
+    };
+
+    window.checkHoles = async function() {
+        const month = document.getElementById('controlMonth').value;
+        const container = document.getElementById('calendarHoles');
+        container.innerHTML = 'Загрузка...';
+        try {
+            const res = await fetch(`api/get_archive_dates.php?month=${month}`);
+            const data = await res.json();
+            const [year, m] = month.split('-').map(Number);
+            const days = new Date(year, m, 0).getDate();
+            container.innerHTML = '';
+            for(let d=1; d<=days; d++) {
+                const dateStr = `${month}-${String(d).padStart(2,'0')}`;
+                const ok = data.includes(dateStr);
+                container.innerHTML += `<div class="hole-card ${ok?'status-ok':'status-fail'}"><b>${d}</b><br>${ok?'OK':'ДЫРА'}</div>`;
+            }
+        } catch(e) {}
+    };
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('analysisDate').value = today;
+    document.getElementById('controlMonth').value = today.substring(0, 7);
+    window.checkHoles();
+})();
+</script>

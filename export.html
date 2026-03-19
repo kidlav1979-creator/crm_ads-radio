@@ -1,0 +1,403 @@
+<script src="html2pdf.bundle.min.js" onerror="this.onerror=null; this.src='/crm/html2pdf.bundle.min.js';"></script>
+
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header">
+        <h2 style="margin:0"><i class="fas fa-shield-alt"></i> Контроль «Дыр» в эфире</h2>
+    </div>
+    <div class="card-body">
+        <div class="control-panel" style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+            <span>Проверка месяца:</span>
+            <input type="month" id="controlMonth" class="form-control" style="width: 200px;">
+            <button class="btn-primary" onclick="window.checkHoles()">Сканировать эфир</button>
+        </div>
+        <div id="calendarHoles" class="holes-grid"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin:0"><i class="fas fa-edit"></i> Реклама в проектах (Шахматка)</h2>
+        <div>
+            <span>Дата эфира: </span>
+            <input type="date" id="analysisDate" class="form-control" style="display: inline-block; width: auto;">
+        </div>
+    </div>
+    <div class="card-body" style="overflow-x: auto;">
+        <table class="manual-table" id="projectsTable">
+            <thead>
+                <tr>
+                    <th rowspan="2" style="width: 150px;">Название проекта</th>
+                    <th colspan="2">Спонсор 1 (сек)</th>
+                    <th colspan="2">Спонсор 2 (сек)</th>
+                    <th colspan="2">Спонсор 3 (сек)</th>
+                    <th rowspan="2">Часы выхода</th>
+                    <th rowspan="2" style="width: 50px;">Удалить</th>
+                </tr>
+                <tr>
+                    <th>KZ</th><th>RU</th>
+                    <th>KZ</th><th>RU</th>
+                    <th>KZ</th><th>RU</th>
+                </tr>
+            </thead>
+            <tbody id="projectsBody">
+                </tbody>
+        </table>
+        
+        <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+            <div>
+                <button class="btn-secondary" onclick="window.addProjectRow()"><i class="fas fa-plus"></i> Добавить проект</button>
+                <button class="btn-success" id="saveDbBtn" onclick="window.saveProjectsToDB()" style="margin-left: 10px;">
+                    <i class="fas fa-save"></i> Сохранить шаблон на месяц
+                </button>
+            </div>
+            <button class="btn-primary" style="padding: 10px 25px; font-size: 1.1rem;" onclick="window.runAnalysis()">
+                <i class="fas fa-chart-pie"></i> Выполнить Анализ
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card" id="analysisResultCard" style="display: none; margin-top: 20px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin:0"><i class="fas fa-table"></i> Сводная сетка вещания (06:00 - 00:00)</h2>
+
+    </div>
+    <div class="card-body" id="pdfContent">
+        <div id="pdfHeader" style="display: none; text-align: center; border-bottom: 2px solid #333; margin-bottom: 20px; padding-bottom: 10px;">
+            <h1 style="margin: 0; font-size: 22px;">Отчет по эфиру</h1>
+            <p id="pdfDateLabel" style="font-size: 1.2rem; color: #666; margin-top: 5px;"></p>
+        </div>
+
+        <table class="analytics-table">
+            <thead>
+                <tr>
+                    <th>Час</th>
+                    <th>Блоки (БД)</th>
+                    <th style="width: 300px;">Проекты (Ручные)</th>
+                    <th>Всего</th>
+                    <th>Лимит</th>
+                    <th>Баланс (6ч)</th>
+                </tr>
+            </thead>
+            <tbody id="analysisBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .holes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+    .hole-card { padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #ddd; font-size: 0.8rem; }
+    .status-ok { background: #d4edda; color: #155724; }
+    .status-fail { background: #f8d7da; color: #721c24; }
+
+    .manual-table, .analytics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .manual-table th, .manual-table td, .analytics-table th, .analytics-table td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    .manual-table th { background: #f8f9fa; }
+    
+    .p-name { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; }
+    .sec-input { width: 45px; text-align: center; border: 1px solid #eee; padding: 3px; }
+    
+    .hour-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 2px; padding: 2px; }
+    .hour-item { font-size: 0.7rem; display: flex; align-items: center; gap: 1px; cursor: pointer; }
+    
+    /* Стили !important критически важны для сохранения фонов при рендеринге PDF */
+    .limit-danger { color: #dc3545 !important; font-weight: bold; background: #fff0f0 !important; }
+    .balance-good { background: #d4edda !important; color: #155724 !important; }
+    .balance-warn { background: #fff3cd !important; color: #856404 !important; }
+    .summary-cell { border-left: 2px solid #999 !important; }
+
+    .btn-delete { background: #ff4d4d; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+    .btn-delete:hover { background: #cc0000; }
+    .btn-success { background: #28a745; color: white; border: 1px solid #28a745; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    .btn-success:disabled { opacity: 0.6; cursor: not-allowed; }
+</style>
+
+<script>
+(function() {
+    const workHours = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+    let currentLoadedMonth = '';
+
+    function formatTime(totalSec) {
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m}м ${s}с`;
+    }
+
+    // --- ФУНКЦИЯ ЭКСПОРТА В PDF ---
+    window.exportToPDF = function() {
+        const pdfLib = window.html2pdf || (window.default && window.default.html2pdf);
+        if (!pdfLib) {
+            alert('Критическая ошибка: Библиотека PDF не загружена. Проверьте файл html2pdf.bundle.min.js на сервере.');
+            return;
+        }
+
+        const element = document.getElementById('pdfContent');
+        const date = document.getElementById('analysisDate').value;
+        const header = document.getElementById('pdfHeader');
+        const btn = document.getElementById('pdfBtn');
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Формирование...';
+        header.style.display = 'block';
+        document.getElementById('pdfDateLabel').innerText = `Сводная сетка за: ${date}`;
+
+        const opt = {
+            margin:       [10, 5, 10, 5],
+            filename:     `Radio_Report_${date}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        pdfLib().set(opt).from(element).save().then(() => {
+            header.style.display = 'none';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-file-pdf"></i> Скачать PDF';
+        }).catch(err => {
+            console.error('PDF Error:', err);
+            btn.disabled = false;
+            btn.innerHTML = 'Ошибка (см. консоль)';
+        });
+    };
+
+    // --- СОХРАНЕНИЕ И ЗАГРУЗКА ИЗ БАЗЫ ДАННЫХ ---
+    window.saveProjectsToDB = async function() {
+        const btn = document.getElementById('saveDbBtn');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+        btn.disabled = true;
+
+        const date = document.getElementById('analysisDate').value;
+        const monthStr = date.substring(0, 7); // Формат "YYYY-MM"
+
+        const data = [];
+        document.querySelectorAll('#projectsBody tr').forEach(row => {
+            const hours = [];
+            row.querySelectorAll('.h-check:checked').forEach(cb => hours.push(parseInt(cb.value)));
+            data.push({
+                name: row.querySelector('.p-name').value,
+                s1k: row.querySelector('.p-s1k').value, s1r: row.querySelector('.p-s1r').value,
+                s2k: row.querySelector('.p-s2k').value, s2r: row.querySelector('.p-s2r').value,
+                s3k: row.querySelector('.p-s3k').value, s3r: row.querySelector('.p-s3r').value,
+                hours: hours
+            });
+        });
+
+        try {
+            const response = await fetch('api/save_manual_projects.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ month: monthStr, data: JSON.stringify(data) })
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                btn.innerHTML = '<i class="fas fa-check"></i> Сохранено!';
+                btn.style.background = '#218838'; // Darker green on success
+            } else {
+                throw new Error(result.error || 'Unknown error');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Ошибка при сохранении в БД. Проверьте консоль.');
+            btn.innerHTML = '<i class="fas fa-times"></i> Ошибка';
+            btn.style.background = '#dc3545';
+        }
+
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.style.background = '';
+            btn.disabled = false;
+        }, 2000);
+    };
+
+    window.loadProjectsFromDB = async function(monthStr) {
+        const tbody = document.getElementById('projectsBody');
+        tbody.innerHTML = `<tr><td colspan="9" style="padding: 20px; color: #666;"><i class="fas fa-spinner fa-spin"></i> Загрузка шаблона проектов для ${monthStr}...</td></tr>`;
+        
+        try {
+            const response = await fetch(`api/load_manual_projects.php?month=${monthStr}`);
+            const data = await response.json();
+            
+            tbody.innerHTML = ''; // Очищаем 
+            
+            if (data.length > 0) {
+                data.forEach(item => addProjectRow(item));
+            } else {
+                addProjectRow(); // Пустая строка по умолчанию
+            }
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = '';
+            addProjectRow(); // В случае ошибки все равно даем пустую строку
+        }
+    };
+
+    window.deleteProjectRow = function(btn) {
+        if(confirm('Удалить этот проект из списка? (Не забудьте нажать "Сохранить шаблон" после удаления)')) {
+            btn.closest('tr').remove();
+            if(document.getElementById('analysisResultCard').style.display !== 'none') {
+                window.runAnalysis();
+            }
+        }
+    };
+
+    window.addProjectRow = function(savedData = null) {
+        const tr = document.createElement('tr');
+        let hoursHtml = '<div class="hour-grid">';
+        workHours.forEach(h => {
+            const checked = (savedData && savedData.hours.includes(h)) ? 'checked' : '';
+            hoursHtml += `<label class="hour-item"><input type="checkbox" class="h-check" value="${h}" ${checked}>${h}</label>`;
+        });
+        hoursHtml += '</div>';
+
+        tr.innerHTML = `
+            <td><input type="text" class="p-name" placeholder="Проект..." value="${savedData ? savedData.name : ''}"></td>
+            <td><input type="number" class="sec-input p-s1k" value="${savedData ? savedData.s1k : ''}"></td>
+            <td><input type="number" class="sec-input p-s1r" value="${savedData ? savedData.s1r : ''}"></td>
+            <td><input type="number" class="sec-input p-s2k" value="${savedData ? savedData.s2k : ''}"></td>
+            <td><input type="number" class="sec-input p-s2r" value="${savedData ? savedData.s2r : ''}"></td>
+            <td><input type="number" class="sec-input p-s3k" value="${savedData ? savedData.s3k : ''}"></td>
+            <td><input type="number" class="sec-input p-s3r" value="${savedData ? savedData.s3r : ''}"></td>
+            <td>${hoursHtml}</td>
+            <td><button class="btn-delete" onclick="window.deleteProjectRow(this)"><i class="fas fa-trash"></i></button></td>
+        `;
+        document.getElementById('projectsBody').appendChild(tr);
+    };
+
+    // Слушатель изменения даты для автоматической подгрузки шаблона при смене месяца
+    document.getElementById('analysisDate').addEventListener('change', function(e) {
+        const newMonth = e.target.value.substring(0, 7);
+        if (newMonth !== currentLoadedMonth) {
+            currentLoadedMonth = newMonth;
+            window.loadProjectsFromDB(newMonth);
+        }
+    });
+
+    window.runAnalysis = async function() {
+        const date = document.getElementById('analysisDate').value;
+        if(!date) return alert('Выберите дату');
+        const resultBody = document.getElementById('analysisBody');
+        document.getElementById('analysisResultCard').style.display = 'block';
+        resultBody.innerHTML = '<tr><td colspan="6">Загрузка данных из БД...</td></tr>';
+
+        let manualByHour = {};
+        workHours.forEach(h => manualByHour[h] = { kz: 0, ru: 0, projects: [] });
+
+        document.querySelectorAll('#projectsBody tr').forEach(row => {
+            const name = row.querySelector('.p-name').value.trim() || "Проект";
+            const s1k = parseInt(row.querySelector('.p-s1k').value)||0;
+            const s1r = parseInt(row.querySelector('.p-s1r').value)||0;
+            const s2k = parseInt(row.querySelector('.p-s2k').value)||0;
+            const s2r = parseInt(row.querySelector('.p-s2r').value)||0;
+            const s3k = parseInt(row.querySelector('.p-s3k').value)||0;
+            const s3r = parseInt(row.querySelector('.p-s3r').value)||0;
+            
+            const totalKz = s1k + s2k + s3k;
+            const totalRu = s1r + s2r + s3r;
+
+            if (totalKz + totalRu > 0) {
+                row.querySelectorAll('.h-check:checked').forEach(cb => {
+                    const h = parseInt(cb.value);
+                    if(manualByHour[h]) {
+                        manualByHour[h].kz += totalKz;
+                        manualByHour[h].ru += totalRu;
+                        manualByHour[h].projects.push(name);
+                    }
+                });
+            }
+        });
+
+        let dbBlocks = {};
+        try {
+            const res = await fetch(`api/get_archive_blocks.php?date=${date}`);
+            dbBlocks = await res.json();
+        } catch(e) { console.error(e); }
+
+        let html = '';
+        for(let h=6; h<24; h++) {
+            const db = dbBlocks[h] || { duration_sec: 0, kz_sec: 0, ru_sec: 0, spots_count: 0 };
+            const man = manualByHour[h] || { kz: 0, ru: 0, projects: [] };
+            const totalSec = db.duration_sec + man.kz + man.ru;
+            const limitClass = totalSec > 720 ? 'limit-danger' : '';
+
+            const projectList = man.projects.length > 0 
+                ? `<div style="color: #666; font-style: italic; font-size: 0.75rem;">${[...new Set(man.projects)].join(', ')}</div>` 
+                : '';
+
+            html += `<tr>
+                <td><b>${String(h).padStart(2, '0')}:00</b></td>
+                
+                <td style="text-align: left; padding-left: 8px;">
+                    <div>${db.spots_count} рол. / <b>${db.duration_sec}с</b></div>
+                    <div style="font-size: 0.75rem; color: #777;">(KZ:${db.kz_sec} - RU:${db.ru_sec})</div>
+                </td>
+
+                <td style="text-align: left; padding-left: 8px;">
+                    ${projectList}
+                    <b>${man.kz + man.ru}с</b> <span style="color: #777;">(KZ:${man.kz} - RU:${man.ru})</span>
+                </td>
+                
+                <td class="${limitClass}"><b>${formatTime(totalSec)}</b></td>
+                
+                <td>${totalSec > 720 ? '🛑' : '✅'}</td>`;
+
+            if(h === 6 || h === 12 || h === 18) {
+                let sumKz = 0, sumRu = 0, sumTotal = 0;
+                for(let i=0; i<6; i++) {
+                    const curr = h + i;
+                    const d = dbBlocks[curr] || { kz_sec: 0, ru_sec: 0 };
+                    const m = manualByHour[curr] || { kz: 0, ru: 0 };
+                    sumKz += (d.kz_sec + m.kz);
+                    sumRu += (d.ru_sec + m.ru);
+                }
+                sumTotal = sumKz + sumRu;
+                const perc = sumTotal > 0 ? Math.round((sumKz / sumTotal) * 100) : 0;
+                const isGood = perc >= 50;
+                const deficit = !isGood ? Math.ceil((sumTotal / 2) - sumKz) : 0;
+
+                html += `
+                    <td rowspan="6" class="summary-cell ${isGood ? 'balance-good' : 'balance-warn'}" style="vertical-align: middle;">
+                        <div style="font-size: 1.1rem; font-weight: bold;">${perc}% KZ</div>
+                        <div style="font-size: 0.8rem; margin-top: 4px;">(KZ: ${sumKz}с - RU: ${sumRu}с)</div>
+                        ${!isGood && sumTotal > 0 ? `
+                            <div style="margin-top: 6px; font-size: 0.75rem; border-top: 1px solid rgba(0,0,0,0.1); padding-top: 4px;">
+                                Дефицит: <b>${deficit}с KZ</b>
+                            </div>
+                        ` : ''}
+                    </td>`;
+            }
+            html += `</tr>`;
+        }
+        resultBody.innerHTML = html;
+    };
+
+    window.checkHoles = async function() {
+        const month = document.getElementById('controlMonth').value;
+        const container = document.getElementById('calendarHoles');
+        if(!month) return;
+        container.innerHTML = 'Сканирование...';
+        try {
+            const res = await fetch(`api/get_archive_dates.php?month=${month}`);
+            const data = await res.json();
+            const [year, m] = month.split('-').map(Number);
+            const days = new Date(year, m, 0).getDate();
+            container.innerHTML = '';
+            for(let d=1; d<=days; d++) {
+                const dateStr = `${month}-${String(d).padStart(2,'0')}`;
+                const ok = data.includes(dateStr);
+                container.innerHTML += `<div class="hole-card ${ok?'status-ok':'status-fail'}"><b>${d}</b><br>${ok?'OK':'ДЫРА'}</div>`;
+            }
+        } catch(e) { container.innerHTML = 'Ошибка загрузки'; }
+    };
+
+    // Инициализация при загрузке
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('analysisDate').value = today;
+    document.getElementById('controlMonth').value = today.substring(0, 7);
+    
+    currentLoadedMonth = today.substring(0, 7);
+    window.loadProjectsFromDB(currentLoadedMonth);
+    window.checkHoles();
+})();
+</script>
